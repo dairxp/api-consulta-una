@@ -1,0 +1,15 @@
+[project]
+name = "back"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.143.3",
+    "httpx>=0.28.1",
+    "locust>=2.46.7",
+    "openpyxl>=3.1.5",
+    "psycopg2-binary>=2.9.13",
+    "python-dotenv>=1.2.4",
+    "slowapi>=0.1.10",
+    "sqlalchemy>=2.1.5",
+    "uvicorn>=0.54.0",
+]
