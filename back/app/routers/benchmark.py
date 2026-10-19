@@ -1,5 +1,4 @@
 """
-================================================================================
 COMPARACIÓN DE ARQUITECTURAS DE INGESTA Y DE API (Business Intelligence)
 Actividad N° 1 - Benchmark Técnico con PostgreSQL + Redis en Podman
 
@@ -7,7 +6,7 @@ Endpoints disponibles:
   1. GET /api/v1/tradicional/{dni} -> API Tradicional (Síncrona y Bloqueante)
   2. GET /api/v1/lambda/{dni}      -> Arquitectura Lambda (Batch Layer + Speed Layer + Serving Layer)
   3. GET /api/v1/kappa/{dni}       -> Arquitectura Kappa (Redis Streams / Event Buffer + Serving Layer)
-================================================================================
+
 """
 
 from fastapi import APIRouter, Depends, Request, BackgroundTasks
@@ -27,16 +26,13 @@ router = APIRouter(
     tags=["Comparación de Arquitecturas (Tradicional vs Lambda vs Kappa)"]
 )
 
-# ------------------------------------------------------------------------------
 # CONEXIÓN A REDIS (Contenedor Podman)
-# ------------------------------------------------------------------------------
+
 try:
-    import os
-    redis_host = os.environ.get("REDIS_HOST", "localhost")
-    redis_conn = redis.Redis(host=redis_host, port=6379, db=0, decode_responses=True, socket_timeout=1)
+    redis_conn = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True, socket_timeout=1)
     redis_conn.ping()
     REDIS_ACTIVO = True
-    print(f"[INFO] Conectado exitosamente a Redis ({redis_host}:6379)")
+    print("[INFO] Conectado exitosamente a Redis en Podman (localhost:6379)")
 except Exception as err:
     REDIS_ACTIVO = False
     redis_conn = None
@@ -46,10 +42,8 @@ except Exception as err:
 memory_fallback_queue = queue.Queue(maxsize=300000)
 MEMORY_SERVING_CACHE: dict[str, dict] = {}
 
-
-# ------------------------------------------------------------------------------
 # MOTOR DE PROCESAMIENTO KAPPA (Consumidor Streaming en Lotes)
-# ------------------------------------------------------------------------------
+
 def kappa_stream_consumer():
     """
     Consumidor de Streaming (Arquitectura Kappa):
@@ -105,9 +99,8 @@ def kappa_stream_consumer():
 threading.Thread(target=kappa_stream_consumer, daemon=True).start()
 
 
-# ------------------------------------------------------------------------------
 # SPEED LAYER DE ARQUITECTURA LAMBDA (Worker de consolidación)
-# ------------------------------------------------------------------------------
+
 LAMBDA_SPEED_QUEUE: list[dict] = []
 LAMBDA_LOCK = threading.Lock()
 
@@ -148,9 +141,8 @@ def lambda_speed_worker(dni: str, ip: str, encontrado: bool, tipo: str | None):
                 db.close()
 
 
-# ==============================================================================
 # ENDPOINT 1: ARQUITECTURA DE API TRADICIONAL (Síncrona y Bloqueante)
-# ==============================================================================
+
 @router.get("/tradicional/{dni}")
 @router.get("/benchmark/ingesta-directa/{dni}")
 def api_tradicional(dni: str, request: Request, db: Session = Depends(get_db)):
@@ -191,9 +183,7 @@ def api_tradicional(dni: str, request: Request, db: Session = Depends(get_db)):
     }
 
 
-# ==============================================================================
 # ENDPOINT 2: ARQUITECTURA LAMBDA (Batch Layer + Speed Layer + Serving Layer)
-# ==============================================================================
 @router.get("/lambda/{dni}")
 def arquitectura_lambda(
     dni: str,
@@ -233,10 +223,7 @@ def arquitectura_lambda(
         "latencia_ms": round(latencia_ms, 2)
     }
 
-
-# ==============================================================================
 # ENDPOINT 3: ARQUITECTURA KAPPA (Redis Streams + Serving Layer en Memoria)
-# ==============================================================================
 @router.get("/kappa/{dni}")
 @router.get("/benchmark/ingesta-async/{dni}")
 def arquitectura_kappa(dni: str, request: Request, db: Session = Depends(get_db)):
