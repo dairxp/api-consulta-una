@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: postgres_unap
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: elecciones_unap_1er_v4
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:alpine
+    container_name: redis_unap
+    restart: always
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: ./back
+      dockerfile: Dockerfile
+    container_name: api_consulta_unap
+    restart: always
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:password123@db:5432/elecciones_unap_1er_v4
+      REDIS_HOST: redis
+      ENVIRONMENT: development
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+
+volumes:
+  postgres_data:

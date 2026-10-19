@@ -19,11 +19,13 @@ venv.bak/
 .env.*.local
 *.env
 
-# Archivos de volcado y bases de datos pesadas
+# Archivos de volcado y bases de datos pesadas (Datos privados protegidos)
+init.sql
 *.dump
 *.sql.gz
 *.sqlite3
 *.db
+data/*.xlsx
 
 # Logs y resultados de pruebas
 *.log

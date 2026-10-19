@@ -31,10 +31,12 @@ router = APIRouter(
 # CONEXIÓN A REDIS (Contenedor Podman)
 # ------------------------------------------------------------------------------
 try:
-    redis_conn = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True, socket_timeout=1)
+    import os
+    redis_host = os.environ.get("REDIS_HOST", "localhost")
+    redis_conn = redis.Redis(host=redis_host, port=6379, db=0, decode_responses=True, socket_timeout=1)
     redis_conn.ping()
     REDIS_ACTIVO = True
-    print("[INFO] Conectado exitosamente a Redis en Podman (localhost:6379)")
+    print(f"[INFO] Conectado exitosamente a Redis ({redis_host}:6379)")
 except Exception as err:
     REDIS_ACTIVO = False
     redis_conn = None
