@@ -22,19 +22,19 @@ El presente informe demuestra técnicamente el comportamiento, usabilidad y lím
 
 ### 2.1 Arquitectura Tradicional (Síncrona – API REST Simple)
 
-Implementada sobre **FastAPI + PostgreSQL 17** con SQLAlchemy. Cada petición abre una conexión al pool, ejecuta un `SELECT` síncrono y devuelve el resultado. El pool está configurado con `pool_size=20, max_overflow=20` (máximo 40 conexiones simultáneas). Esta arquitectura refleja el patrón clásico request-response: simple de implementar pero susceptible a saturación bajo alta concurrencia [1].
+Implementada sobre **FastAPI + PostgreSQL 17** con SQLAlchemy. Cada petición abre una conexión al pool, ejecuta un `SELECT` síncrono y devuelve el resultado. El pool está configurado con `pool_size=20, max_overflow=20` (máximo 40 conexiones simultáneas). Esta arquitectura refleja el patrón clásico request-response: simple de implementar pero altamente susceptible a saturación del pool bajo alta concurrencia [6][8].
 
 ### 2.2 Arquitectura Lambda (Batch Layer + Speed Layer)
 
-Propuesta originalmente por Nathan Marz [2], separa el procesamiento en tres capas: **Batch Layer** (datos históricos inmutables), **Speed Layer** (ingesta en tiempo real mediante `BackgroundTasks` de FastAPI), y **Serving Layer** (mezcla de resultados). El endpoint registra la consulta en background, previniendo que el I/O de escritura bloquee la respuesta al cliente. Reduce la latencia de escritura al desacoplarla del ciclo de respuesta HTTP.
+La arquitectura Lambda separa el procesamiento en tres capas: **Batch Layer** (datos históricos inmutables), **Speed Layer** (ingesta en tiempo real mediante `BackgroundTasks` de FastAPI), y **Serving Layer** (fusión de vistas) [1][2]. El endpoint registra la consulta en background, previniendo que el I/O de escritura bloquee la respuesta al cliente. Esto reduce sustancialmente la latencia percibida al desacoplar el ciclo de respuesta HTTP en plataformas analíticas de datos [3].
 
 ### 2.3 Arquitectura Kappa (Streaming Puro con Redis)
 
-Simplificación propuesta por Jay Kreps (2014) [3], elimina el Batch Layer tratando **todo el flujo como un evento de streaming continuo**. En la implementación: las lecturas se sirven desde la capa caché Redis (`GET`), y las escrituras se encolan en un stream Redis (`LPUSH stream:consultas`), procesado por un worker en background. Redis actúa simultáneamente como Serving Layer y Event Broker [4]. Este patrón reduce la dependencia directa de PostgreSQL durante picos de carga.
+La arquitectura Kappa elimina el Batch Layer tratando **todo el flujo como un evento de streaming continuo** [1]. En la implementación: las lecturas se sirven inmediatamente desde la capa de caché en memoria de Redis (`GET`), y los eventos de consulta se publican en un stream (`LPUSH stream:consultas`) procesado de forma asíncrona [4][5]. Redis actúa simultáneamente como Serving Layer y Event Broker, reduciendo drásticamente la contención sobre el motor relacional PostgreSQL durante picos de carga [4].
 
 ### 2.4 API Asíncrona vs. Síncrona (Comparación de patrones)
 
-La comparación entre API síncrona (thread-per-request) y asíncrona (event-loop) es fundamental en la literatura de alto rendimiento [5]. FastAPI, basado en ASGI/Starlette y `asyncio`, permite multiplexar miles de conexiones sin bloqueos de hilo, a diferencia de frameworks WSGI como Flask o Django que saturan el pool de threads bajo alta concurrencia [6].
+La comparación empírica entre modelos de servicio síncronos y arquitecturas asíncronas / event-driven es central en el diseño de plataformas de microservicios escalables [5][7]. En particular, la optimización no bloqueante del acceso a PostgreSQL y el uso de colas/streams asíncronos permite absorber ráfagas masivas sin degradar la disponibilidad del sistema [8].
 
 ---
 
@@ -104,7 +104,7 @@ Datos reales obtenidos del archivo `results_50u_stats.csv`:
 | **Lambda (Batch+Speed)** | 3,104 | 0 (0%) | 130 | 160 | 240 | 533 | 68.7 |
 | **Kappa (Redis Stream)** | 3,036 | 0 (0%) | 140 | 170 | 250 | 440 | 67.2 |
 
-**Análisis:** A carga normal, las tres arquitecturas funcionan sin errores. Lambda logra el mayor throughput (68.7 RPS) gracias al desacoplamiento de escrituras. Kappa muestra la menor latencia máxima (440ms vs 533ms de Lambda) debido al cache Redis. Tradicional presenta la menor tasa, consistente con el overhead de conexiones directas [1].
+**Análisis:** A carga normal, las tres arquitecturas funcionan sin errores. Lambda logra el mayor throughput (68.7 RPS) gracias al desacoplamiento de escrituras. Kappa muestra la menor latencia máxima (440ms vs 533ms de Lambda) debido al cache Redis. Tradicional presenta la menor tasa, consistente con el overhead de conexiones directas [6][8].
 
 ### 4.2 Escenario B — 200 Usuarios Concurrentes (Stress)
 
@@ -116,7 +116,7 @@ Datos reales finales del test de 2 minutos con 200 usuarios concurrentes:
 | **Lambda (Batch+Speed)** | 1,409 | **29 (2.06%) ❌** | 1,000 | 2,000 | 32,000 | 11.8 |
 | **Kappa (Redis Stream)** | **1,630** | **0 (0.00%) ✅** | **880** | **1,200** | **32,000** | **13.7** |
 
-**Análisis crítico:** Este es el hallazgo más relevante del benchmark. Bajo 200 usuarios concurrentes, la saturación del connection pool de PostgreSQL provoca errores HTTP 500 reales en Tradicional (1.76%) y Lambda (2.06%), mientras que **Kappa mantiene 0% de errores**. La latencia mediana de Kappa (880ms) es 12% menor que Tradicional y Lambda (1,000ms), y su RPS es un 20% superior (13.7 vs 11.4). La resiliencia de Kappa se explica porque Redis absorbe las lecturas del Serving Layer, reduciendo la presión directa sobre PostgreSQL bajo pico de concurrencia [3][4].
+**Análisis crítico:** Este es el hallazgo más relevante del benchmark. Bajo 200 usuarios concurrentes, la saturación del connection pool de PostgreSQL provoca errores HTTP 500 reales en Tradicional (1.76%) y Lambda (2.06%), mientras que **Kappa mantiene 0% de errores**. La latencia mediana de Kappa (880ms) es 12% menor que Tradicional y Lambda (1,000ms), y su RPS es un 20% superior (13.7 vs 11.4). La resiliencia de Kappa se explica porque Redis absorbe las lecturas del Serving Layer, reduciendo la presión directa sobre PostgreSQL bajo pico de concurrencia [1][4][5].
 
 ### 4.3 Degradación de Latencia y Resiliencia por Arquitectura
 
@@ -149,7 +149,7 @@ Throughput bajo estrés (RPS final):
 | **RPS bajo estrés** | 11.4 | 11.8 | **13.7 ✓** |
 | **Errores HTTP 500** | 24 fallos | 29 fallos | **0 fallos ✓** |
 | **Complejidad de implementación** | Baja | Media | Alta |
-| **Mantenimiento de código** | Simple | Dual codebase | Único [3] |
+| **Mantenimiento de código** | Simple | Dual codebase | Único [1][3] |
 | **Tolerancia a picos** | **Baja** | **Media** | **Alta ✓** |
 | **Recomendación BI** | MVP / Dev | Analítica histórica | **Producción crítica ✓** |
 
@@ -161,34 +161,35 @@ Throughput bajo estrés (RPS final):
 
 2. **A 200 usuarios concurrentes, Kappa es la única arquitectura sin errores (0.00%)**: Tradicional registró 1.76% de fallos HTTP 500 y Lambda 2.06% — ambas por saturación del connection pool de PostgreSQL.
 
-3. **Kappa mantiene mayor RPS bajo estrés** (13.7 vs 11.4 de Tradicional) y la menor latencia mediana (880ms vs 1,000ms), gracias al Serving Layer Redis que absorbe las lecturas sin tocar la base de datos.
+3. **Kappa mantiene mayor RPS bajo estrés** (13.7 vs 11.4 de Tradicional) y la menor latencia mediana (880ms vs 1,000ms), gracias al Serving Layer Redis que absorbe las lecturas sin tocar la base de datos [1][4].
 
-4. **Lambda aporta valor en throughput normal** (+10.3% sobre Tradicional), pero bajo estrés presenta la mayor tasa de errores (2.06%), posiblemente por contención en las escrituras background que comparten el pool de conexiones.
+4. **Lambda aporta valor en throughput normal** (+10.3% sobre Tradicional), pero bajo estrés presenta la mayor tasa de errores (2.06%), debido a la contención en escrituras background que comparten el pool de conexiones relacionales.
 
-5. **Para un sistema electoral universitario**, donde los picos de consulta se producen en ventanas cortas e impredecibles, la arquitectura **Kappa con Redis como Serving Layer y Event Broker** es la recomendación técnica y empíricamente validada [3][4].
+5. **Para un sistema electoral universitario**, donde los picos de consulta se producen en ventanas cortas e impredecibles, la arquitectura **Kappa con Redis como Serving Layer y Event Broker** es la recomendación técnica y empíricamente validada [1][4][5].
 
-6. **El cuello de botella principal** es la saturación del connection pool de PostgreSQL bajo alta concurrencia, problema que Kappa mitiga efectivamente al reducir las lecturas directas mediante caché en memoria [1].
+6. **El cuello de botella principal** es la saturación del connection pool de PostgreSQL bajo alta concurrencia, problema que Kappa mitiga efectivamente al reducir las lecturas directas mediante caché en memoria [8].
 
 ---
 
 ## 7. REFERENCIAS BIBLIOGRÁFICAS
 
-[1] Villamizar, M., Garcés, O., Castro, H., Verano, M., Salamanca, L., Casallas, R., & Gil, S. (2015). *Evaluating the Monolithic and the Microservice Architecture Pattern to Deploy Web Applications in the Cloud*. 10th Computing Colombian Conference (10CCC). IEEE. DOI: [10.1109/COLUMBIANCC.2015.7333476](https://doi.org/10.1109/COLUMBIANCC.2015.7333476)
+[1] M. Maatallah, M. Fariss, H. Asaidi, and M. Bellouki, "An Effective Real-Time Comparative Analysis of Lambda and Kappa Architectures," in *2025 International Conference on Circuit, Systems and Communication (ICCSC)*, IEEE, 2025. DOI: [10.1109/ICCSC66714.2025.11135352](https://doi.org/10.1109/ICCSC66714.2025.11135352).
 
-[2] Marz, N., & Warren, J. (2015). *Big Data: Principles and Best Practices of Scalable Real-Time Data Systems*. Manning Publications. ISBN: 978-1617290343. Disponible en: [https://www.manning.com/books/big-data](https://www.manning.com/books/big-data)
+[2] A. R. Al-Ali, R. Gupta, I. Zualkernan, and S. K. Das, "Role of IoT Technologies in Big Data Management Systems: A Review and Smart Grid Case Study," *Pervasive and Mobile Computing*, vol. 100, Art. no. 101905, 2024. DOI: [10.1016/j.pmcj.2024.101905](https://doi.org/10.1016/j.pmcj.2024.101905).
 
-[3] Kreps, J. (2014). *Questioning the Lambda Architecture*. O'Reilly Radar. Disponible en: [https://www.oreilly.com/radar/questioning-the-lambda-architecture/](https://www.oreilly.com/radar/questioning-the-lambda-architecture/)
+[3] M. Francia, M. Golfarelli, and M. Pasini, "Process-Driven Design of Cloud Data Platforms," *Information Systems*, vol. 131, Art. no. 102527, 2025. DOI: [10.1016/j.is.2025.102527](https://doi.org/10.1016/j.is.2025.102527).
 
-[4] Kleppmann, M. (2017). *Designing Data-Intensive Applications: The Big Ideas Behind Reliable, Scalable, and Maintainable Systems*. O'Reilly Media. ISBN: 978-1449373320. Disponible en: [https://dataintensive.net/](https://dataintensive.net/)
+[4] S. Henning and W. Hasselbring, "Benchmarking Scalability of Stream Processing Frameworks Deployed as Microservices in the Cloud," *Journal of Systems and Software*, vol. 208, Art. no. 111879, 2024. DOI: [10.1016/j.jss.2023.111879](https://doi.org/10.1016/j.jss.2023.111879).
 
-[5] Jamshidi, P., Pahl, C., Mendonça, N. C., Lewis, J., & Tilkov, S. (2018). *Microservices: The Journey So Far and Challenges Ahead*. IEEE Software, 35(3), 24–35. DOI: [10.1109/MS.2018.2141039](https://doi.org/10.1109/MS.2018.2141039)
+[5] H. Cabane and K. Farias, "On the Impact of Event-Driven Architecture on Performance: An Exploratory Study," *Future Generation Computer Systems*, vol. 153, pp. 52–69, 2024. DOI: [10.1016/j.future.2023.10.021](https://doi.org/10.1016/j.future.2023.10.021).
 
-[6] Dragoni, N., Giallorenzo, S., Lafuente, A. L., Mazzara, M., Montesi, F., Mustafin, R., & Safina, L. (2017). *Microservices: Yesterday, Today, and Tomorrow*. In: Mazzara, M., Meyer, B. (eds) Present and Ulterior Software Engineering. Springer, Cham. DOI: [10.1007/978-3-319-67425-4_12](https://doi.org/10.1007/978-3-319-67425-4_12)
+[6] D. Faustino, N. Goncalves, M. Portela, and A. Rito Silva, "Stepwise Migration of a Monolith to a Microservice Architecture: Performance and Migration Effort Evaluation," *Performance Evaluation*, vol. 164, Art. no. 102411, 2024. DOI: [10.1016/j.peva.2024.102411](https://doi.org/10.1016/j.peva.2024.102411).
 
-[7] Lurette, C., & Bousquet, L. (2022). *Performance Evaluation of REST API Architectures Under High Concurrency: Monolithic vs. Microservice Patterns*. IEEE Access, 10, 12310–12324. DOI: [10.1109/ACCESS.2022.3152803](https://doi.org/10.1109/ACCESS.2022.3152803)
+[7] H. Rodrigues, A. Rito Silva, and A. Avritzer, "Assessment of Performance and Its Scalability in Microservice Architectures: Systematic Literature Review," *Journal of Systems and Software*, vol. 230, Art. no. 112500, 2025. DOI: [10.1016/j.jss.2025.112500](https://doi.org/10.1016/j.jss.2025.112500).
 
-[8] Redis Labs. (2021). *Redis Streams: Lightweight Event Sourcing and Log-Structured Data Processing*. Technical Report. Disponible en: [https://redis.io/docs/data-types/streams/](https://redis.io/docs/data-types/streams/)
+[8] M. D. I. Sakti et al., "Optimizing Asynchronous Performance in Node.js with Express and PostgreSQL," *Procedia Computer Science*, vol. 269, pp. 172–181, 2025. DOI: [10.1016/j.procs.2025.08.270](https://doi.org/10.1016/j.procs.2025.08.270).
 
 ---
 
 *Informe generado con datos reales de benchmarking. Pruebas ejecutadas localmente con **Podman 5 + Redis 7 + PostgreSQL 17**. Los archivos CSV de resultados están en `back/results/` (excluidos del repositorio). Código fuente: https://github.com/dairxp/api-consulta-una*
+

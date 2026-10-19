@@ -169,8 +169,11 @@ api-consulta-una/
 
 ## Referencias
 
-1. Kreps, J. (2014). *Questioning the Lambda Architecture*. O'Reilly. https://www.oreilly.com/radar/questioning-the-lambda-architecture/
-2. Marz, N. & Warren, J. (2015). *Big Data*. Manning. ISBN: 978-1617290343.
-3. Villamizar, M. et al. (2015). *Evaluating Monolithic vs. Microservice Architecture*. IEEE 10CCC. DOI: [10.1109/COLUMBIANCC.2015.7333476](https://doi.org/10.1109/COLUMBIANCC.2015.7333476)
-4. Jamshidi, P. et al. (2018). *Microservices: The Journey So Far*. IEEE Software, 35(3). DOI: [10.1109/MS.2018.2141039](https://doi.org/10.1109/MS.2018.2141039)
-5. Kleppmann, M. (2017). *Designing Data-Intensive Applications*. O'Reilly. https://dataintensive.net/
+1. M. Maatallah, M. Fariss, H. Asaidi, and M. Bellouki, "An Effective Real-Time Comparative Analysis of Lambda and Kappa Architectures," in *2025 International Conference on Circuit, Systems and Communication (ICCSC)*, IEEE, 2025. DOI: [10.1109/ICCSC66714.2025.11135352](https://doi.org/10.1109/ICCSC66714.2025.11135352)
+2. A. R. Al-Ali, R. Gupta, I. Zualkernan, and S. K. Das, "Role of IoT Technologies in Big Data Management Systems: A Review and Smart Grid Case Study," *Pervasive and Mobile Computing*, vol. 100, 2024. DOI: [10.1016/j.pmcj.2024.101905](https://doi.org/10.1016/j.pmcj.2024.101905)
+3. M. Francia, M. Golfarelli, and M. Pasini, "Process-Driven Design of Cloud Data Platforms," *Information Systems*, vol. 131, 2025. DOI: [10.1016/j.is.2025.102527](https://doi.org/10.1016/j.is.2025.102527)
+4. S. Henning and W. Hasselbring, "Benchmarking Scalability of Stream Processing Frameworks Deployed as Microservices in the Cloud," *Journal of Systems and Software*, vol. 208, 2024. DOI: [10.1016/j.jss.2023.111879](https://doi.org/10.1016/j.jss.2023.111879)
+5. H. Cabane and K. Farias, "On the Impact of Event-Driven Architecture on Performance: An Exploratory Study," *Future Generation Computer Systems*, vol. 153, 2024. DOI: [10.1016/j.future.2023.10.021](https://doi.org/10.1016/j.future.2023.10.021)
+6. D. Faustino, N. Goncalves, M. Portela, and A. Rito Silva, "Stepwise Migration of a Monolith to a Microservice Architecture: Performance and Migration Effort Evaluation," *Performance Evaluation*, vol. 164, 2024. DOI: [10.1016/j.peva.2024.102411](https://doi.org/10.1016/j.peva.2024.102411)
+7. H. Rodrigues, A. Rito Silva, and A. Avritzer, "Assessment of Performance and Its Scalability in Microservice Architectures: Systematic Literature Review," *Journal of Systems and Software*, vol. 230, 2025. DOI: [10.1016/j.jss.2025.112500](https://doi.org/10.1016/j.jss.2025.112500)
+8. M. D. I. Sakti et al., "Optimizing Asynchronous Performance in Node.js with Express and PostgreSQL," *Procedia Computer Science*, vol. 269, 2025. DOI: [10.1016/j.procs.2025.08.270](https://doi.org/10.1016/j.procs.2025.08.270)
