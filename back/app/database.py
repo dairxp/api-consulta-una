@@ -11,9 +11,9 @@ engine = create_engine(
     DATABASE_URL,
     # Equilibrio perfecto: Un tope de 300 conexiones por worker para no acaparar tanta memoria,
     # pero manteniendo una sala de espera gigantesca para que nadie se quede fuera.
-    pool_size=50,          
-    max_overflow=250,      
-    pool_timeout=60,       
+    pool_size=20,          
+    max_overflow=20,      
+    pool_timeout=30,       
     pool_recycle=1800      
 )
 

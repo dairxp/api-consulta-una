@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Entornos virtuales
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Variables de entorno y secretos
+.env
+.env.local
+.env.*.local
+*.env
+
+# Archivos de volcado y bases de datos pesadas
+*.dump
+*.sql.gz
+*.sqlite3
+*.db
+
+# Logs y resultados de pruebas
+*.log
+*.jtl
+locust_reports/
+.benchmarks/
+
+# IDEs y editores
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
