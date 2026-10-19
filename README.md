@@ -1,109 +1,176 @@
-# Comparación de Arquitecturas de Ingesta y APIs (Business Intelligence)
-**Actividad N° 1 — UNAP**
+# API Consulta Electoral UNAP — Benchmark de Arquitecturas
+**Business Intelligence · Actividad N° 1 | Universidad Arturo Prat**
 
-Este repositorio contiene la implementación técnica y el benchmark comparativo de rendimiento entre una **Arquitectura de API Tradicional**, la **Arquitectura Lambda** y la **Arquitectura Kappa**, utilizando un dataset real de **26,665 electores** de la Universidad Nacional del Altiplano (UNAP) y un stack contenerizado con **PostgreSQL + Redis + FastAPI**.
+![Demostración de Ejecución y Pruebas](./data/Animation.gif)
 
----
+Benchmark comparativo de tres arquitecturas de API/ingesta sobre el padrón electoral UNAP (26,665 electores). Stack: FastAPI + PostgreSQL 17 + Redis 7 (Podman).
 
-## Arquitecturas Implementadas
-
-### 1. Arquitectura API Tradicional (Síncrona y Bloqueante)
-* **Endpoint:** `GET /api/v1/tradicional/{dni}`
-* **Flujo:** La petición HTTP realiza una consulta síncrona en PostgreSQL y ejecuta un `INSERT` individual bloqueante en la tabla `log_consultas` antes de responder.
-* **Comportamiento bajo estrés:** Cuello de botella severo por agotamiento del Connection Pool de la base de datos (`FATAL: sorry, too many clients already`), latencias elevadas (> 1,300 ms) y tasa de fallos de ~8%.
-
-### 2. Arquitectura Lambda (Batch Layer + Speed Layer + Serving Layer)
-* **Endpoint:** `GET /api/v1/lambda/{dni}`
-* **Flujo:**
-  * **Batch Layer:** Consulta el dataset maestro inmutable indexado en PostgreSQL.
-  * **Speed Layer:** Encola el evento reciente en segundo plano sin bloquear la respuesta HTTP.
-  * **Serving Layer:** Fusiona la vista consolidada para responder de inmediato.
-* **Comportamiento bajo estrés:** Desacopla la escritura de la respuesta HTTP, reduciendo la latencia a < 15 ms con 0% de fallos.
-
-### 3. Arquitectura Kappa (Flujo Unificado de Streaming con Redis + Serving Layer)
-* **Endpoint:** `GET /api/v1/kappa/{dni}`
-* **Flujo:**
-  * **Stream Log:** Todo evento entra al broker de streaming continuo en **Redis** (`stream:consultas`) en 1 ms.
-  * **Stream Processor:** Un worker consumidor extrae eventos continuamente y los vuelca en micro-lotes masivos (`bulk_save_objects`) hacia PostgreSQL usando una única conexión a la BD.
-  * **Serving Layer:** Cache en memoria RAM (Redis Key-Value) para consultas sub-milisegundo (< 2 ms).
-* **Comportamiento bajo estrés:** **0.0% de fallos**, throughput superior a 1,000 req/s y latencia media de 1 a 3 ms.
+Informe técnico: [`informe.md`](./informe.md)
 
 ---
 
-## Cómo pasar y ejecutar el proyecto en una NUEVA MÁQUINA (Con Podman o Docker)
+## Arquitecturas
 
-El proyecto incluye `compose.yaml` y `schema.sql` (esquema DDL con datos de prueba). En cualquier computadora nueva solo clonas el repositorio y ejecutas:
+### 1. API Tradicional — `GET /api/v1/tradicional/{dni}`
 
-### Con Podman (Recomendado):
-```bash
-# 1. Clonar el repositorio
-git clone https://github.com/dairxp/api-consulta-una.git
-cd api-consulta-una
-
-# 2. Levantar todo el stack con Podman (PostgreSQL + Redis + FastAPI)
-podman compose up --build -d
+```
+Cliente → FastAPI → SELECT padron → INSERT log_consultas → Respuesta
+                    (PostgreSQL, síncrono y bloqueante)
 ```
 
-### ¿Qué ocurre automáticamente dentro de los contenedores?
-1. **PostgreSQL (`db`):** Arranca e inicializa automáticamente las tablas e índices desde `schema.sql`.
-2. **Redis (`redis`):** Arranca el broker de streaming y cache en el puerto 6379.
-3. **API (`api`):** Compila e inicia FastAPI en el puerto 8000.
+Consulta y escribe en la misma transacción HTTP. Bajo alta concurrencia satura el connection pool → HTTP 500.
 
-* Documentación interactiva Swagger UI: `http://localhost:8000/docs`
+**Respuesta:**
+```json
+{
+  "arquitectura": "1. API Tradicional (Sincrona Bloqueante)",
+  "dni": "12345678",
+  "encontrado": true,
+  "nombre": "GARCIA QUISPE JUAN",
+  "local_votacion": "PABELLÓN A - SALA 3",
+  "latencia_ms": 14.32
+}
+```
 
 ---
 
-## Ejecución Local en Desarrollo (Sin Contenedores, con `uv`)
+### 2. Lambda — `GET /api/v1/lambda/{dni}`
 
-Si deseas correr directamente en tu entorno local de Python con `uv`:
+```
+Cliente → FastAPI → SELECT padron → Respuesta inmediata
+                         ↓ (BackgroundTask, no bloquea)
+                    Speed Layer (cola en memoria)
+                         ↓ (cada 100 eventos)
+                    INSERT bulk → PostgreSQL
+```
 
-```powershell
+La escritura del log se desacopla de la respuesta HTTP. Reduce latencia, pero el Speed Layer comparte el pool de conexiones.
+
+**Respuesta:**
+```json
+{
+  "arquitectura": "2. Arquitectura Lambda",
+  "dni": "12345678",
+  "encontrado": true,
+  "nombre": "GARCIA QUISPE JUAN",
+  "latencia_ms": 8.71
+}
+```
+
+---
+
+### 3. Kappa — `GET /api/v1/kappa/{dni}`
+
+```
+Cliente → FastAPI → GET elector:{dni} Redis → Respuesta inmediata
+                         ↓ (cache miss)
+                    SELECT PostgreSQL → SET Redis (TTL 1h)
+                         ↓
+                    RPUSH stream:consultas (Redis)
+                         ↓
+                    Kappa Worker (daemon)
+                         ↓
+                    LPOP 250 eventos → INSERT bulk PostgreSQL
+```
+
+Lectura desde Redis (sub-ms). Escritura totalmente desacoplada vía stream Redis. Redis actúa como Serving Layer y Event Broker.
+
+**Respuesta:**
+```json
+{
+  "arquitectura": "3. Arquitectura Kappa (Streaming Puro con Redis)",
+  "dni": "12345678",
+  "encontrado": true,
+  "nombre": "GARCIA QUISPE JUAN",
+  "motor_streaming": "Redis en Podman",
+  "latencia_ms": 2.14
+}
+```
+
+---
+
+## Resultados del Benchmark (Locust, 2 min)
+
+| Métrica | Tradicional | Lambda | Kappa |
+|---|---|---|---|
+| RPS @ 50u | 62.3 | 68.7 | 67.2 |
+| p50 @ 50u | 140ms | 130ms | 140ms |
+| Errores @ 200u | 1.76% | 2.06% | **0.00%** |
+| p50 @ 200u | 1,000ms | 1,000ms | **880ms** |
+| RPS @ 200u | 11.4 | 11.8 | **13.7** |
+
+---
+
+## Ejecución
+
+### 1. Levantar Redis (Podman)
+
+```bash
+podman machine init && podman machine start   # solo Windows/macOS, una vez
+podman run -d --name redis-unap -p 6379:6379 redis:7-alpine
+```
+
+### 2. Levantar la API
+
+```bash
 cd back
 uv sync
 uv run uvicorn app.main:app --port 8000 --reload
+# Swagger UI: http://localhost:8000/docs
+```
+
+### 3. Benchmark con Locust
+
+```bash
+# Modo visual → http://localhost:8089
+uv run locust -f locustfile.py --host=http://127.0.0.1:8000
+
+# Headless — 50 usuarios, 2 min
+uv run locust -f locustfile.py --host=http://127.0.0.1:8000 \
+  --headless -u 50 -r 10 --run-time 2m --csv=results/results_50u
+
+# Headless — 200 usuarios (stress)
+uv run locust -f locustfile.py --host=http://127.0.0.1:8000 \
+  --headless -u 200 -r 20 --run-time 2m --csv=results/results_200u
+```
+
+### 4. Stack completo con Podman Compose
+
+```bash
+git clone https://github.com/dairxp/api-consulta-una.git
+cd api-consulta-una
+podman compose up --build -d
 ```
 
 ---
 
-## Cómo Ejecutar el Benchmark
+## Estructura
 
-### 1. Con Apache JMeter
-1. Abrir JMeter y crear un **Thread Group** (100 a 200 hilos concurrentes).
-2. Añadir **CSV Data Set Config** apuntando a `back/dnis_test.csv` (variable: `dni`).
-3. Añadir **HTTP Request**:
-   * Host: `127.0.0.1` | Puerto: `8000`
-   * Path: `/api/v1/tradicional/${dni}` o `/api/v1/kappa/${dni}`
-4. Añadir Listeners: **Summary Report** y **Aggregate Graph**.
-
-### 2. Con Locust (Monitor Web en Tiempo Real)
-```powershell
-cd back
-uv run locust -f locustfile.py
 ```
-* Abrir en el navegador: `http://localhost:8089`
+api-consulta-una/
+├── back/
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── database.py
+│   │   ├── models.py
+│   │   └── routers/benchmark.py   # Las 3 arquitecturas
+│   ├── locustfile.py
+│   ├── dnis_test.csv
+│   └── results/                   # CSVs Locust (excluidos de git)
+├── schema.sql                     # DDL + 4 registros anónimos
+├── docker-compose.yml
+├── informe.md
+└── .gitignore
+```
 
-### 3. Con Postman
-* Importar el archivo `back/postman_collection.json` en Postman.
-* Usar el **Collection Runner** cargando el archivo `back/dnis_test.csv`.
+> **Privacidad:** Los 26,665 registros reales nunca se suben a GitHub. Solo `schema.sql` con datos anónimos de ejemplo.
 
 ---
 
-## Resumen de Resultados del Benchmark (62,522 peticiones)
+## Referencias
 
-| Métrica | 1. API Tradicional (Síncrona) | 2. Arquitectura Lambda | 3. Arquitectura Kappa (Redis) |
-| :--- | :---: | :---: | :---: |
-| **Latencia Promedio** | **1,315.98 ms** | **14.20 ms** | **2.06 ms** |
-| **Percentil 95 (p95)** | **1,800 ms** | **22.00 ms** | **3.20 ms** |
-| **Throughput (RPS)** | 69.6 req/s | ~450 req/s | **> 1,000 req/s** |
-| **Tasa de Fallos** | **7.9% (2,477 fallos)** | **0.0%** | **0.0%** |
-| **Causa de Fallo** | `FATAL: too many clients` | Ninguna | Ninguna |
-
----
-
-## Referencias Bibliográficas (SCOPUS y ScienceDirect)
-
-1. **Kreps, J. (2014).** *Questioning the Lambda Architecture*. O'Reilly Radar / ScienceDirect.
-2. **Psaltis, A. (2017).** *Streaming Data: Designing practical mobile and IoT data platforms with Kafka and Spark*. Manning Publications / ScienceDirect.
-3. **Villamizar, M., Garzon, M., Ochoa, L., et al. (2016).** *Evaluating the monolithic and the microservice architecture pattern to deploy web applications in the cloud*. *Computing*, Springer / Scopus. DOI: 10.1007/s00607-016-0520-y.
-4. **Le, N. T., & Lee, D. H. (2021).** *Performance Benchmarking of Event-Driven vs. Request-Response Ingestion Architectures in High-Throughput Scenarios*. *IEEE Access / Scopus*, 9, 114520-114532. DOI: 10.1109/ACCESS.2021.3105124.
-5. **Overeem, M., Spoor, M., & Jansen, S. (2017).** *The architectural impact of event sourcing: A case study*. In *Proceedings of the International Conference on Software Architecture* (pp. 235-244). IEEE / Scopus.
+1. Kreps, J. (2014). *Questioning the Lambda Architecture*. O'Reilly. https://www.oreilly.com/radar/questioning-the-lambda-architecture/
+2. Marz, N. & Warren, J. (2015). *Big Data*. Manning. ISBN: 978-1617290343.
+3. Villamizar, M. et al. (2015). *Evaluating Monolithic vs. Microservice Architecture*. IEEE 10CCC. DOI: [10.1109/COLUMBIANCC.2015.7333476](https://doi.org/10.1109/COLUMBIANCC.2015.7333476)
+4. Jamshidi, P. et al. (2018). *Microservices: The Journey So Far*. IEEE Software, 35(3). DOI: [10.1109/MS.2018.2141039](https://doi.org/10.1109/MS.2018.2141039)
+5. Kleppmann, M. (2017). *Designing Data-Intensive Applications*. O'Reilly. https://dataintensive.net/

@@ -27,11 +27,14 @@ init.sql
 *.db
 data/*.xlsx
 
-# Logs y resultados de pruebas
+# Logs y resultados de pruebas de carga (datos privados, no subir)
 *.log
 *.jtl
 locust_reports/
 .benchmarks/
+back/results/
+results/
+*.html.report
 
 # IDEs y editores
 .vscode/
