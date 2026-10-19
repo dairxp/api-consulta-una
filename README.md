@@ -32,7 +32,7 @@ Este repositorio contiene la implementación técnica y el benchmark comparativo
 
 ## Cómo pasar y ejecutar el proyecto en una NUEVA MÁQUINA (Con Podman o Docker)
 
-El proyecto incluye `compose.yaml` y `schema.sql` (esquema DDL con datos de prueba anónimos, protegiendo la privacidad de los datos reales del padrón). En cualquier computadora nueva solo clonas el repositorio y ejecutas:
+El proyecto incluye `compose.yaml` y `schema.sql` (esquema DDL con datos de prueba). En cualquier computadora nueva solo clonas el repositorio y ejecutas:
 
 ### Con Podman (Recomendado):
 ```bash

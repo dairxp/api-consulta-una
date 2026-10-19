@@ -1,8 +1,6 @@
--- =============================================================================
 -- ESQUEMA DE BASE DE DATOS — Plataforma de Consulta Electoral (Mock / Estructura)
 -- Datos privados protegidos. Este archivo contiene únicamente la estructura DDL
 -- y registros de demostración anónimos.
--- =============================================================================
 
 CREATE TABLE IF NOT EXISTS padron (
     dni VARCHAR(20) PRIMARY KEY,
@@ -55,9 +53,8 @@ CREATE TABLE IF NOT EXISTS log_consultas (
 
 CREATE INDEX IF NOT EXISTS idx_log_consultas_doc ON log_consultas(documento);
 
--- =============================================================================
--- DATOS ANÓNIMOS DE DEMOSTRACIÓN (Para pruebas y despliegue inicial)
--- =============================================================================
+-- DATOS ANÓNIMOS (Para pruebas y despliegue inicial)
+
 INSERT INTO padron (dni, codigo, ap_paterno, ap_materno, nombres, tipo, facultad, escuela_profesional)
 VALUES 
     ('73312120', '200101', 'ALCA', 'LOPEZ', 'JHONY', 'ESTUDIANTE DE PREGRADO', 'INGENIERIA', 'INGENIERIA DE SISTEMAS'),
